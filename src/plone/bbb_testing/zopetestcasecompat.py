@@ -16,7 +16,7 @@ class ZTCCompatTestCase(unittest.TestCase):
 
     def setUp(self):
         self.app = self.layer['app']
-        self.folder = self.layer['folder']
+        self.setUpCompat()
         self.afterSetUp()
 
     def afterSetUp(self):
@@ -27,64 +27,36 @@ class ZTCCompatTestCase(unittest.TestCase):
 
     def tearDown(self):
         self.beforeTearDown()
+        self.tearDownCompat()
 
     def beforeTearDown(self):
         pass
-
-
-class ZTCCompatMixin(object):
 
     def setUpCompat(self):
         self._setupFolder()
         self._setupUserFolder()
         self._setupUser()
-        plone.testing.z2.login(self['folder'].acl_users, user_name)
+        plone.testing.z2.login(self.folder.acl_users, user_name)
 
     def _setupFolder(self):
         '''Creates and configures the folder.'''
-        app = self['app']
+        app = self.app
         from OFS.Folder import manage_addFolder
         manage_addFolder(app, folder_name)
         folder = getattr(app, folder_name)
         folder._addRole(user_role)
         folder.manage_role(user_role, standard_permissions)
-        self['folder'] = folder
+        self.folder = folder
 
     def _setupUserFolder(self):
         '''Creates the user folder.'''
         from AccessControl.User import manage_addUserFolder
-        manage_addUserFolder(self['folder'])
+        manage_addUserFolder(self.folder)
 
     def _setupUser(self):
         '''Creates the default user.'''
-        uf = self['folder'].acl_users
+        uf = self.folder.acl_users
         uf.userFolderAddUser(user_name, user_password, [user_role], [])
 
     def tearDownCompat(self):
-        del self['folder']
-
-
-class ZTCCompatIntegration(plone.testing.z2.IntegrationTesting,
-ZTCCompatMixin):
-    """ZopeTestCase compatibility"""
-
-    def testSetUp(self):
-        super(ZTCCompatIntegration, self).testSetUp()
-        self.setUpCompat()
-
-    def testTearDown(self):
-        self.tearDownCompat()
-        super(ZTCCompatIntegration, self).testTearDown()
-
-
-class ZTCCompatFunctional(plone.testing.z2.FunctionalTesting,
-ZTCCompatMixin):
-    """ZopeTestCase compatibilty"""
-
-    def testSetUp(self):
-        super(ZTCCompatFunctional, self).testSetUp()
-        self.setUpCompat()
-
-    def testTearDown(self):
-        self.tearDownCompat()
-        super(ZTCCompatFunctional, self).testTearDown()
+        del self.folder
