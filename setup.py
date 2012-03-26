@@ -25,4 +25,6 @@ setup(name='plone.bbb_testing',
       install_requires=[
           'plone.testing',
       ],
+      extras_require=dict(
+          zope212=['Zope2']),
       )
