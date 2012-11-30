@@ -2,7 +2,6 @@ import unittest
 import sys
 import re
 import  base64
-import transaction
 
 import AccessControl.Permissions
 
@@ -38,9 +37,12 @@ def savestate(func):
 class ZTCCompatTestCase(unittest.TestCase):
 
     def setUp(self):
-        self.app = self.layer['app']
         self.setUpCompat()
         self.afterSetUp()
+
+    @property
+    def app(self):
+        return self.layer['app']
 
     def afterSetUp(self):
         pass
@@ -73,7 +75,7 @@ class ZTCCompatTestCase(unittest.TestCase):
 
     def _setupUserFolder(self):
         '''Creates the user folder.'''
-        from AccessControl.User import manage_addUserFolder
+        from OFS.userfolder import manage_addUserFolder
         manage_addUserFolder(self.folder)
 
     def _setupUser(self):
@@ -90,12 +92,7 @@ class ZTCCompatTestCase(unittest.TestCase):
         '''Publishes the object at 'path' returning a response object.'''
 
         from StringIO import StringIO
-        from ZPublisher.Request import Request
         from ZPublisher.Response import Response
-        from ZPublisher.Publish import publish_module
-
-        # Commit the sandbox for good measure
-        transaction.commit()
 
         if env is None:
             env = {}
@@ -114,7 +111,7 @@ class ZTCCompatTestCase(unittest.TestCase):
         elif len(p) == 2:
             [env['PATH_INFO'], env['QUERY_STRING']] = p
         else:
-            raise TypeError, ''
+            raise TypeError('')
 
         if basic:
             env['HTTP_AUTHORIZATION'] = "Basic %s" % base64.encodestring(basic)
@@ -124,17 +121,70 @@ class ZTCCompatTestCase(unittest.TestCase):
 
         outstream = StringIO()
         response = Response(stdout=outstream, stderr=sys.stderr)
-        request = Request(stdin, env, response)
+
+        request.__init__(stdin, env, response)
         for k, v in extra.items():
             request[k] = v
 
-        publish_module('Zope2',
-                       debug=not handle_errors,
-                       request=request,
-                       response=response,
-                      )
+        publish(self.app,
+                debug_mode=not handle_errors,
+                request=request,
+                response=response)
 
+        serialized = str(response)
+        if serialized:
+            outstream.write(serialized)
         return ResponseWrapper(response, outstream, path)
+
+
+def publish(app, debug_mode, request, response):
+    """
+    Used in place of ::
+
+        from ZPublisher.Publish import publish_module
+            publish_module('Zope2',
+                           debug=not handle_errors,
+                           request=request,
+                           response=response)
+
+    Warning: some calls made by ``publish_module`` have been removed
+    (maybe wrongly).
+    """
+
+    from ZPublisher.mapply import mapply
+    from ZPublisher.Publish import call_object
+    from ZPublisher.Publish import missing_name
+    from ZPublisher.Publish import dont_publish_class
+
+    from zope.publisher.interfaces import ISkinnable
+    from zope.publisher.skinnable import setDefaultSkin
+
+    if ISkinnable.providedBy(request):
+        setDefaultSkin(request)
+    request.processInputs()
+
+    if debug_mode:
+        response.debug_mode = debug_mode
+    if not request.get('REMOTE_USER', None):
+        response.realm = 'Zope2'
+
+    # Get the path list.
+    # According to RFC1738 a trailing space in the path is valid.
+    path = request.get('PATH_INFO')
+
+    request['PARENTS'] = [app]
+
+    from Zope2.App.startup import validated_hook
+    object = request.traverse(path, validated_hook=validated_hook)
+
+    result = mapply(object, request.args, request,
+                  call_object, 1,
+                  missing_name,
+                  dont_publish_class,
+                  request, bind=1)
+
+    if result is not response:
+        response.setBody(result)
 
 
 class ResponseWrapper:
